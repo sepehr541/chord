@@ -5,10 +5,11 @@
   {mod, {chord_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    erl
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [chord_app, chord_fingertable, chord_messaging, chord_request_handlers, chord_response_handlers, chord_sup]},
 
   {licenses, ["Apache-2.0"]},
   {links, []}

@@ -7,8 +7,14 @@
 
 -behaviour(application).
 
+-include("chord_types.hrl").
+
 -export([start/2, stop/1]).
--export([create/1]).
+
+-import(chord_request_handlers, [handleRequest/3, findSuccessor/2]).
+-import(chord_response_handlers, [handleResponse/3]).
+-import(chord_messaging, [sendRequest/3]).
+-import(chord_utils, [isIdInRange/3, hash/1]).
 
 start(_StartType, _StartArgs) ->
     chord_sup:start_link().
@@ -16,124 +22,129 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     ok.
 
-%% internal functions
-%% node.go
--type maybe(T) :: {just, T} | nothing.
--type finger_table() :: [pid(), ...].
+-spec pidToNode(Pid) -> Node when
+    Pid :: pid(),
+    Node :: chord_node().
 
--record(cnode, {id, pred, ft}).
--type cnode() :: #cnode{id::binary(), pred::maybe(pid()), ft::finger_table()}.
+pidToNode(Pid) ->
+    #chord_node{id = hash(Pid), pid = Pid}.
 
--type timer() :: ok. % use send_after/2
+-spec create() -> state().
 
--spec init_state() -> Node when
-    Node::cnode().
+create() ->
+    This = pidToNode(self()),
+    Ft = array:set(0, This, array:new(?M)),
+    #state{this = This, pred = This, ft = Ft}.
 
-init_state() ->
-    PidBinary = term_to_binary(self()),
-    Id = crypto:hash(sha, PidBinary),
-    #cnode{id=Id, pred=null, ft=[Id]}.
+% – func (node *Node) join(other *RemoteNode) error
+-spec join(Remote) -> chord_node() when
+    Remote :: chord_node().
 
--spec create_node() -> none().
-create_node() ->
-    Node = init_state(),
-    handleMessages(Node).
+join(Remote) ->
+    {{NodeId, NodePid}, _, Ft} = Node = create(),
+    Successor = sendRequest(Node, Remote, #findSuccessor{targetId = NodeId}),
+    {{NodeId, NodePid}, nil, array:set(0, Successor, Ft)}.
 
+-spec loop(Node) -> no_return() when
+    Node :: chord_node().
 
--spec create_and_join(Remote) -> none() | error when
-    Remote::pid().
+loop(Node) ->
+    handleMessages(Node),
+    doTimerTasks(Node).
 
-create_and_join(Remote) ->
-    Node = init_state(),
-    Remote ! {}
-    handleMessages(Node).
-
--spec create(Init) -> pid() when
-    Init::fun().
-
-create(Init) ->
-    Pid = spawn(Init),
-    io:format("Process created: ~p~n", [Pid]),
-    Pid.
-
-
-
--spec handleMessages(Node) -> none() when
-    Node::cnode().
+-spec handleMessages(Node) -> any() when
+    Node :: state().
 
 handleMessages(Node) ->
     receive
         {state} -> io:format("Node: ~p~n~p~n", [self(), Node]);
-        {findSuccessor, }
-        {stabilize, Pid, Id} -> error;
-        {notify_request, Pid, Id} -> error;
-        {notify_response, Pid, Id} -> error
+        #request{remote = Remote, payload = Payload} -> handleRequest(Node, Remote, Payload);
+        #response{remote = Remote, payload = Payload} -> handleResponse(Node, Remote, Payload)
     end,
     handleMessages(Node).
 
+-spec doTimerTasks(Node) -> any() when
+    Node :: chord_node().
 
-% – func (node *Node) join(other *RemoteNode) error
--spec join(Node, RemoteNode) -> ok | error when
-    Node::cnode(),
-    RemoteNode::cnode().
-
-join(Node, RemoteNode) -> error.
+doTimerTasks(Node) ->
+    stabilize(Node),
+    fixFingers(Node).
 
 % – func (node *Node) stabilize(ticker *time.Ticker)
--spec stabilize(Node, Timer) -> ok | error when
-    Node::cnode(),
-    Timer::timer().
+-spec stabilize(State) -> UpdatedState when
+    State :: state(),
+    UpdatedState :: state().
 
-stabilize(Node, Timer) -> error.
+stabilize(State) ->
+    Node = State#state.this,
+    Ft = State#state.ft,
+    Successor = array:get(0, Ft),
+    PredOfSucc = getPredecessor(Node, Successor),
+    UpdatedState =
+        case
+            isIdInRange(
+                PredOfSucc#chord_node.id,
+                Node#chord_node.id,
+                Successor#chord_node.id
+            )
+        of
+            true -> State#state{ft = array:set(0, PredOfSucc, Ft)};
+            false -> State
+        end,
+    notify(Node, array:get(0, UpdatedState#state.ft)),
+    UpdatedState.
+
+-spec fixFingers(State) -> UpdatedState when
+    State :: state(),
+    UpdatedState :: state().
+
+fixFingers(#state{this = This, ft = Ft, next = Next} = State) ->
+    N = This#chord_node.id,
+    Step = integer_to_binary(floor(math:pow(2, Next - 1))),
+    UpdatedFt = array:set(
+        Next,
+        findSuccessor(State, N + Step),
+        Ft
+    ),
+    State#state{ft = UpdatedFt, next = (Next rem ?M) + 1}.
 
 % – func (node *Node) notify(remoteNode *RemoteNode)
--spec notify(Node, RemoteNode) -> ok | error when
-    Node::cnode(),
-    RemoteNode::cnode().
+-spec notify(State, Remote) -> any() when
+    State :: state(),
+    Remote :: chord_node().
 
-notify(Node, RemoteNode) -> error.
-
-% – func (node *Node) findSuccessor(id []byte) (*RemoteNode, error)
--spec findSuccessor(Node, Id) -> ok | error when
-    Node::cnode(),
-    Id::binary().
-
-findSuccessor(Node, Id) -> error.
+notify(State, Remote) ->
+    Node = State#state.this,
+    sendRequest(Node, Remote, #notify{}).
 
 % – func (node *Node) findPredecessor(id []byte) (*RemoteNode, error)
--spec findPredecessor(Node, Id) -> ok | error when
-    Node::cnode(),
-    Id::binary().
+-spec getPredecessor(Node, Remote) -> chord_node() | nil when
+    Node :: state(),
+    Remote :: chord_node().
 
-findPredecessor(Node, Id) -> error.
-
-
-
+getPredecessor(State, Remote) ->
+    sendRequest(State#state.this, Remote, #getPredecessor{}),
+    receive
+        #foundPredecessor{predecessor = Pred} -> Pred
+    end.
 
 % • chord.go
 % – func ShutdownNode(node *Node)
--spec shutdownNode(Node::cnode()) -> ok | error.
+-spec shutdownNode(Node :: state()) -> ok | error.
 shutdownNode(Node) -> error.
 
 % • finger_table.go
 % – func (node *Node) initFingerTable()
--spec initFingerTable(Node::cnode()) -> ok | error.
+-spec initFingerTable(Node :: state()) -> ok | error.
 initFingerTable(Node) -> error.
-
-% – func (node *Node) fixNextFinger(ticker *time.Ticker)
--spec fixNextFinger(Node::cnode(), Timer::timer()) -> ok | error.
-fixNextFinger(Node, Timer) -> error.
 
 % – func fingerMath(n []byte, i int, m int) []byte
 
-
 % • kv_store.go
 % – func Get(node *Node, key string) (string, error)
--spec get(Node::cnode(), Key::string()) -> ok | error.
-get(Node, Key) -> error.
 
 % – func Put(node *Node, key string, value string) error
--spec put(Node::cnode(), Key::string(), Value::string()) -> ok | error.
+-spec put(Node :: state(), Key :: string(), Value :: string()) -> ok | error.
 put(Node, Key, Value) -> error.
 
 % – func (node *Node) locate(key string) (*RemoteNode, error)
@@ -143,36 +154,31 @@ put(Node, Key, Value) -> error.
 % – func (node *Node) PutLocal(req *KeyValueReq (*KeyValueReply, error)
 
 % – func (node *Node) TransferKeys(req *TransferReq) (*RpcOkay, error)
--type transferReq() :: {cnode(), [string()]}.
--spec transferKeys(Node::cnode(), Request::transferReq()) -> ok | error.
+-spec transferKeys(Node :: state(), Request :: chord_node()) -> ok | error.
 transferKeys(Node, Request) -> error.
 
 % • node_rpc_impl.go
 % – func (node *Node) GetSuccessorId(req *RemoteId) (*IdReply, error)
--spec getSuccessorId(Node::cnode(), Remote::pid()) -> binary() | error.
+-spec getSuccessorId(Node :: state(), Remote :: pid()) -> binary() | error.
 getSuccessorId(Node, Remote) -> error.
 
 % – func (node *Node) SetPredecessorId(req *UpdateReq) (*RpcOkay, error)
--spec setPredecessorId(Node::cnode(), Remote::pid(), Id::binary()) -> ok | error.
+-spec setPredecessorId(Node :: state(), Remote :: pid(), Id :: binary()) -> ok | error.
 setPredecessorId(Node, Remote, Id) -> error.
 
 % – func (node *Node) SetSuccessorId(req *UpdateReq) (*RpcOkay, error)
--spec setSuccessorId(Node::cnode(), Remote::pid(), Id::binary()) -> ok | error.
+-spec setSuccessorId(Node :: state(), Remote :: pid(), Id :: binary()) -> ok | error.
 setSuccessorId(Node, Remote, Id) -> error.
 
-% – func (node *Node) FindSuccessor(query *RemoteQuery) (*IdReply, error)
--spec findSuccessor(Node::cnode(), Remote::pid(), Id::binary()) -> ok | error.
-findSuccessor(Node, Remote, Id) -> error.
-
 % – func (node *Node) Notify(remoteNode *RemoteNode) (*RpcOkay, error)
--spec notifyNode(Node::cnode(), Remote::pid()) -> ok | error.
+-spec notifyNode(Node :: state(), Remote :: pid()) -> ok | error.
 notifyNode(Node, Remote) -> error.
-
-
-% – func (node *Node) ClosestPrecedingFinger(query *RemoteQuery) (*IdReply, error)
--spec closestPrecedingFinger(Node::cnode(), Remote::pid(), Id::binary()) -> ok | error.
-closestPrecedingFinger(Node, Remote, Id) -> error.
 
 % • util.go
 % – func Between(nodeX, nodeA, nodeB []byte) bool
 % – func BetweenRightIncl(nodeX, nodeA, nodeB []byte) bool
+
+% The effect of network topolgy on Chord's perfomance
+% mesh vs star vs ring with start in between
+%
+%
