@@ -49,6 +49,13 @@
 -record(heartbeatAck, {}).
 -type heartbeatAck() :: #heartbeatAck{}.
 
+-record(closestPreceedingFinger, {targetId :: id()}).
+-type closestPreceedingFinger() :: #closestPreceedingFinger{}.
+
+-record(successor, {}).
+% -type successor() :: #successor{}.
+ 
+
 %
 % Key-Value Store
 %

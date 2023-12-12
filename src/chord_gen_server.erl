@@ -3,13 +3,13 @@
 
 -include("chord_types.hrl").
 -import(chord_utils, [hash/1]).
+-import(chord_ft_utils, [ft_new/2]).
+-import(chord_api, [rpc_findSuccessor/2, initFingerTable/2]).
+-import(chord_circular_interval, [isInInterval/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
-
-%% API
--export([create/1, join/2]).
 
 %
 % gen_server callbacks
@@ -24,70 +24,72 @@ init([NodeName]) ->
 
 init([NodeName, BootstrapNode]) ->
     State = initState(NodeName),
-    UpdatedState = initFingerTable(State, BootstrapNode)
-    notify(UpdatedState),
+    UpdatedState = initFingerTable(State, BootstrapNode),
+    %notify(UpdatedState),
     {ok, UpdatedState}.
 
-
-
-
-
 %
-% API
+% handlers
 %
--spec create(NodeName::atom()) -> any().
-create(NodeName) ->
-    Name = {local, NodeName},
-    gen_server:start_link(Name, ?MODULE, [NodeName], []).
+-spec handleFindSuccessor(Node, Remote, Id) -> any() when
+    Node :: state(),
+    Remote :: chord_node(),
+    Id :: id().
 
--spec join(NodeName, BootstrapNode) -> any() when
-    NodeName::atom(),
-    BootstrapNode::atom().
+handleFindSuccessor(Node, Remote, Id) ->
+    % case findSuccessor(Node, Id) of
+    %     #foundSuccessor{targetId = Id} = Found ->
+    %         sendResponse(Node, Remote, Found);
+    %     #askNode{targetId = Id, nodeToAsk = Closest} ->
+    %         sendRequest(Node, Closest, #findSuccessor{targetId = Id}),
+    %         receive
+    %             #response{remote = Closest, payload = #foundSuccessor{targetId = Id} = Found} ->
+    %                 sendResponse(Node, Remote, Found)
+    %         end
+    % end.
+    todo.
 
-join(NodeName, BootstrapNode) ->
-    % check if bootstrapNode is registered
-    case whereis(BootstrapNode) of
-        undefined -> error("Bootstrap node does not exist");
-        _ -> gen_server:start_link({local, NodeName}, ?MODULE, [NodeName, BootstrapNode], [])
+
+-spec handleNotify(State, Remote) -> UpdatedState when
+    State::state(),
+    Remote::chord_node(),
+    UpdatedState::state().
+
+handleNotify(#state{pred = Pred} = State, Remote) when Pred =:= nil -> 
+    State#state{pred = Remote};
+handleNotify(#state{this = This, pred = Pred} = State, Remote) ->
+    Interval = #interval_Open_Open{left = Pred#chord_node.id, right = This#chord_node.id},
+    case isInInterval(Remote#chord_node.id, Interval) of
+        true -> State#state{pred = Remote};
+        false -> State
     end.
 
--spec rpc_findSuccessor(LocalState, Remote, Id) -> Successor when
-    LocalState::state(),
-    Remote::atom(),
-    Id::id(),
-    Successor::chord_node().
 
-rpc_findSuccessor(LocalState, Remote, Id) ->
-    gen_server:call(Remote, #findSuccessor{targetId=Id}).
+-spec handleGetKey(State, Remote, Key) -> Result when
+    State::state(),
+    Remote::chord_node(),
+    Key::key(),
+    Result:: foundEntry() | entryNotFound().
 
+% if I am the only Node
+handleGetKey(#state{this=This, pred=This, kvstore=KVStore}, Remote, Key) ->
+    % check if the hash of key is range of me
+    EntryId = hash(Key),
+    #entryNotFound{}.
 
 
 %
 % helpers
 %
--spec newFingerTable(Size, DefaultValue) -> fingertable() when
-    Size::pos_integer(),
-    DefaultValue::any().
-
-newFingerTable(Size, DefaultValue) ->
-    array:new([{size, Size}, {default, DefaultValue}, {fixed, true}]).
-
 -spec initState(NodeName) -> state() when
     NodeName::atom().
 
 initState(NodeName) ->
     This = #chord_node{id = hash(NodeName), pid = NodeName},
-    Ft = newFingerTable(?M, This),
+    Ft = ft_new(?M, This),
     #state{this = This, pred = This, ft = Ft}.
 
 
--spec initFingerTable(State, BootstrapNode) -> UpdatedState when
-    State::state(),
-    BootstrapNode::atom(),
-    UpdatedState::state().
-
-initFingerTable(State, BootstrapNode) ->
-    Successor = rpc_findSuccessor(State, BootstrapNode, todo).
 
 
 
