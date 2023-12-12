@@ -12,36 +12,20 @@
 -type chord_node() :: #chord_node{}.
 
 -type fingertable() :: array:array(chord_node()).
+-type ftIndex() :: 1..?M.
 
 -record(state, {
     this :: chord_node(),
     pred :: (chord_node() | nil),
     ft :: fingertable(),
     next :: pos_integer(),
-    kvstore :: kvstore()
+    kvstore = #{} :: kvstore()
 }).
 -type state() :: #state{}.
 
 %
-% Message Structure
+% RPC Requests
 %
--type message() :: request() | response().
--record(request, {remote :: chord_node(), payload :: request_payload()}).
--type request() :: #request{}.
-
--record(response, {remote :: chord_node(), payload :: response_payload()}).
--type response() :: #response{}.
-
--type message_payload() :: request_payload() | response_payload().
--type request_payload() ::
-    findSuccessor()
-    | notify()
-    | getPredecessor().
-
--type response_payload() ::
-    foundSuccessor()
-    | foundPredecessor().
-
 -record(findSuccessor, {targetId :: id()}).
 -type findSuccessor() :: #findSuccessor{}.
 
@@ -93,3 +77,27 @@
 
 % use send_after/2
 -type timer() :: ok.
+
+
+%
+% Interval
+%
+
+-record(interval_Open_Open, {left :: id(), right :: id()}).
+-type interval_Open_Open() :: #interval_Open_Open{}.
+
+-record(interval_Open_Closed, {left :: id(), right :: id()}).
+-type interval_Open_Closed() :: #interval_Open_Closed{}.
+
+-record(interval_Closed_Open, {left :: id(), right :: id()}).
+-type interval_Closed_Open() :: #interval_Closed_Open{}.
+
+-record(interval_Closed_Closed, {left :: id(), right :: id()}).
+-type interval_Closed_Closed() :: #interval_Closed_Closed{}.
+
+-type interval() ::
+    interval_Open_Open()
+    | interval_Open_Closed()
+    | interval_Closed_Open()
+    | interval_Closed_Closed().
+

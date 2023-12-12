@@ -12,4 +12,4 @@ shell:
 	rebar3 shell
 
 typecheck:
-	dialyzer --src src/*.erl
+	dialyzer --src src/*.erl test/*.erl

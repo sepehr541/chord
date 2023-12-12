@@ -12,8 +12,6 @@
 -export([start/2, stop/1]).
 
 -import(chord_request_handlers, [handleRequest/3, findSuccessor/2]).
--import(chord_response_handlers, [handleResponse/3]).
--import(chord_messaging, [sendRequest/3]).
 -import(chord_utils, [isIdInRange/3, hash/1]).
 
 start(_StartType, _StartArgs) ->
@@ -28,47 +26,6 @@ stop(_State) ->
 
 pidToNode(Pid) ->
     #chord_node{id = hash(Pid), pid = Pid}.
-
--spec create() -> state().
-
-create() ->
-    This = pidToNode(self()),
-    Ft = array:set(0, This, array:new(?M)),
-    #state{this = This, pred = This, ft = Ft}.
-
-% – func (node *Node) join(other *RemoteNode) error
--spec join(Remote) -> chord_node() when
-    Remote :: chord_node().
-
-join(Remote) ->
-    {{NodeId, NodePid}, _, Ft} = Node = create(),
-    Successor = sendRequest(Node, Remote, #findSuccessor{targetId = NodeId}),
-    {{NodeId, NodePid}, nil, array:set(0, Successor, Ft)}.
-
--spec loop(Node) -> no_return() when
-    Node :: chord_node().
-
-loop(Node) ->
-    handleMessages(Node),
-    doTimerTasks(Node).
-
--spec handleMessages(Node) -> any() when
-    Node :: state().
-
-handleMessages(Node) ->
-    receive
-        {state} -> io:format("Node: ~p~n~p~n", [self(), Node]);
-        #request{remote = Remote, payload = Payload} -> handleRequest(Node, Remote, Payload);
-        #response{remote = Remote, payload = Payload} -> handleResponse(Node, Remote, Payload)
-    end,
-    handleMessages(Node).
-
--spec doTimerTasks(Node) -> any() when
-    Node :: chord_node().
-
-doTimerTasks(Node) ->
-    stabilize(Node),
-    fixFingers(Node).
 
 % – func (node *Node) stabilize(ticker *time.Ticker)
 -spec stabilize(State) -> UpdatedState when

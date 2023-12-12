@@ -1,0 +1,18 @@
+TODOs:
+-- DONE -- 1. change arithmetic to be mod 2^m
+-- DONE -- 2. finger table range is 1 <= i <= m
+-- DONE -- 3. add helpers for finger[k].start and finger[k].interval
+4. implement find_predecessor(id)
+    - check if n == successor // n is the only node in the network
+    - check interval and RPC to n' for closest preceeding
+-- DONE -- 5. create a circular interval helper class
+6. use timeout events for timer tasks
+'''
+gen_server timeout events When a gen_server has set a timeout, 
+and that timeout triggers, 
+an out-of-band message with the single atom timeout is generated,
+and the handle_info/2 callback is invoked to handle it. 
+This mechanism is usually used to make servers wake up and take some action 
+if they have received no requests within the timeout period.
+'''
+-- DONE -- 7. create helpers for finger[k].start and finger[k].interval and finger[k].node
