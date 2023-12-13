@@ -2,19 +2,34 @@
 -include("chord_types.hrl").
 -import(chord_circular_interval, [isInInterval/2]).
 -import(chord_ft_utils, [ft_node/2, successor/1, ft_set_finger/3, ft_start/2]).
--import(chord_utils, [pow/2]).
+-import(chord_utils, [hash/1, pow/2, mod/2]).
 
+%
+% Local
+%
 -export([
     create/1,
     join/2,
     findSuccessor/2,
-    rpc_findSuccessor/2,
     closestPreceedingFinger/2,
-    rcp_closestPreceedingFinger/2
+    notify/1,
+    initFingerTable/2,
+    updateFingerTable/3,
+    moveKeys/2,
+    acceptKVEntires/2
+]).
+
+%
+% RPC
+%
+-export([
+    rpc_findSuccessor/2,
+    rpc_closestPreceedingFinger/2,
+    rpc_acceptKVEntires/2
 ]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%  API
+%%%%%%%%%%%%%%%%%%%%%% API %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %
@@ -100,20 +115,34 @@ initFingerTable(#state{this = Node} = State, BootstrapNode) ->
     Successor = rpc_findSuccessor(BootstrapNode, ft_start(State, 1)),
     UpdatedState = ft_set_finger(State, 1, Successor),
     lists:foldl(
-        fun(I, StateAcc) -> 
-            Interval = #interval_Closed_Open{left = Node#chord_node.id, right = ft_start(StateAcc, I)},
+        fun(I, StateAcc) ->
+            Interval = #interval_Closed_Open{
+                left = Node#chord_node.id, right = ft_start(StateAcc, I)
+            },
             case isInInterval(ft_start(State, I + 1), Interval) of
-                true -> ft_set_finger(StateAcc, I + 1, ft_node(State, I));
-                false -> ft_set_finger(StateAcc, I + 1, rpc_findSuccessor(BootstrapNode, ft_start(StateAcc, I + 1)))
+                true ->
+                    ft_set_finger(StateAcc, I + 1, ft_node(State, I));
+                false ->
+                    ft_set_finger(
+                        StateAcc, I + 1, rpc_findSuccessor(BootstrapNode, ft_start(StateAcc, I + 1))
+                    )
             end
         end,
         UpdatedState,
-        lists:seq(1, ?M - 1)).
+        lists:seq(1, ?M - 1)
+    ).
 
 -spec notify(State) -> any() when State :: state().
 
-notify(#state{this = #chord_node{id = N}}) ->
-    [N - pow(2, I - 1) || I <- lists:seq(1, ?M)].
+notify(#state{this = Node} = State) ->
+    N = Node#chord_node.id,
+    lists:foreach(
+        fun(I) ->
+            P = findPredecessor(State, mod(N - pow(2, I - 1), pow(2, ?M))),
+            rpc_updateFingerTable(P, Node, I)
+        end,
+        lists:seq(1, ?M)
+    ).
 
 %
 % Local: return closest finger preceeding Id
@@ -143,9 +172,123 @@ closestPreceedingFinger(#state{this = Node, ft = Ft} = State, Id, Index) when In
         false -> closestPreceedingFinger(State, Id, Index - 1)
     end.
 
-%%
-%% RPC Calls
-%%
+%
+% Local: Update finger table according to the Remote request
+% This should be called as a handler for RPC
+% 
+-spec updateFingerTable(State, S, I) -> UpdatedState when
+    State :: state(),
+    S :: chord_node(),
+    I :: ftIndex(),
+    UpdatedState :: state().
+
+updateFingerTable(#state{this = ThisNode} = State, S, I) ->
+    Finger = ft_node(State, I),
+    Interval = #interval_Closed_Open{left = ThisNode#chord_node.id, right = Finger#chord_node.id},
+    case isInInterval(S#chord_node.id, Interval) of
+        true -> 
+            UpdatedState = ft_set_finger(State, I, S),
+            P = UpdatedState#state.pred,
+            rpc_updateFingerTable(P, S, I),
+            UpdatedState;
+        false -> State % No-Op
+    end.
+
+
+%
+% Local: move local keys to Remote
+%
+-spec moveKeys(State, Remote) -> UpdatedState when
+    State::state(),
+    Remote::chord_node(),
+    UpdatedState::state().
+
+
+moveKeys(#state{this = #chord_node{id = N}, kvstore = KVStore} = State, Remote) ->
+    EntriesToMove = maps:filter(
+        fun(Key, _) ->
+            Interval = #interval_Closed_Open{left = hash(Key), right = N},
+            isInInterval(Remote#chord_node.id, Interval)
+        end,
+        KVStore),
+    rpc_acceptKVEntires(Remote, EntriesToMove),
+    EntriesToKeep = maps:without(maps:keys(EntriesToMove), KVStore),
+    State#state{kvstore = EntriesToKeep}.
+
+%
+% Local: merge in incoming KVStore entries from Remote
+%
+-spec acceptKVEntires(State, Entries) -> UpdatedState when
+    State::state(),
+    Entries::kvstore(),
+    UpdatedState::state().
+
+acceptKVEntires(#state{kvstore = KVStore} = State, Entries) ->
+    MergedKVStore = maps:merge(KVStore, Entries),
+    State#state{kvstore = MergedKVStore}.
+
+
+%
+% local: Shutdown Node
+%
+-spec shutdownNode(Node :: state()) -> ok | error.
+shutdownNode(Node) -> error.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%% Key-Value Store %%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%
+% Local: put Key-Value in Chord Ring
+%
+-spec putKV(State, Key, Value) -> UpdatedState when
+    State::state(),
+    Key::key(),
+    Value::value(),
+    UpdatedState::state().
+
+putKV(#state{this = ThisNode} = State, Key, Value) ->
+    Successor = findSuccessor(State, hash(Key)),
+    case Successor =:= ThisNode of
+        true -> State#state{};
+        false -> 
+            
+            State
+    end.
+
+
+%
+% TODO: Concurrent Join Support
+%
+
+% -spec stabilize(State) -> UpdatedState when
+%     State :: state(),
+%     UpdatedState :: state().
+
+% stabilize(State) ->
+%     Node = State#state.this,
+%     Ft = State#state.ft,
+%     Successor = array:get(0, Ft),
+%     PredOfSucc = getPredecessor(Node, Successor),
+%     UpdatedState =
+%         case
+%             isIdInRange(
+%                 PredOfSucc#chord_node.id,
+%                 Node#chord_node.id,
+%                 Successor#chord_node.id
+%             )
+%         of
+%             true -> State#state{ft = array:set(0, PredOfSucc, Ft)};
+%             false -> State
+%         end,
+%     notify(Node, array:get(0, UpdatedState#state.ft)),
+%     UpdatedState.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%% RPC Calls %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %
 % get the successor of remote node
@@ -156,7 +299,7 @@ rpc_successor(Remote) ->
 %
 % Remote: return closest finger preceeding Id
 %
-rcp_closestPreceedingFinger(Remote, Id) ->
+rpc_closestPreceedingFinger(Remote, Id) ->
     rpc_call(Remote, #closestPreceedingFinger{targetId = Id}).
 
 %
@@ -169,6 +312,29 @@ rcp_closestPreceedingFinger(Remote, Id) ->
 
 rpc_findSuccessor(Remote, Id) ->
     rpc_call(Remote, #findSuccessor{targetId = Id}).
+
+%
+% Remote: tell remote to update its finger table to Node at index I
+%
+-spec rpc_updateFingerTable(Remote, Node, I) -> ok when
+    Remote :: chord_node(),
+    Node :: chord_node(),
+    I :: ftIndex().
+
+rpc_updateFingerTable(Remote, Node, I) ->
+    rpc_call(Remote, #updateFingerTable{node = Node, index = I}).
+
+
+%
+% Remote: tell remote to accept Key-Value Entries
+%
+-spec rpc_acceptKVEntires(Remote, Entries) -> any() when
+    Remote::chord_node(),
+    Entries::kvstore().
+
+
+rpc_acceptKVEntires(Remote, Entries) ->
+    rpc_call(Remote, #acceptKVEntires{entries = Entries}).
 
 %
 % Helpers

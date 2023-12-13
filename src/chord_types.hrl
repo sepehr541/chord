@@ -54,7 +54,10 @@
 
 -record(successor, {}).
 % -type successor() :: #successor{}.
- 
+
+-record(updateFingerTable, {node :: chord_node(), index :: ftIndex()}).
+
+-record(acceptKVEntires, {entries:: kvstore()}).
 
 %
 % Key-Value Store

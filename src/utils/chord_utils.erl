@@ -2,7 +2,7 @@
 
 -include("../chord_types.hrl").
 
--export([hash/1]).
+-export([hash/1, pow/2, mod/2]).
 
 -spec hash(Term) -> Digest when
     Term :: term(),
@@ -22,3 +22,11 @@ pow(Base, Exp) ->
 
 pow(_, 0, Acc) -> Acc;
 pow(Base, Exp, Acc) when Exp > 0 -> pow(Base, Exp - 1, Acc * Base).
+
+
+%
+% From Stackoverflow: https://stackoverflow.com/a/858649
+%
+mod(X,Y) when X > 0 -> X rem Y;
+mod(X,Y) when X < 0 -> Y + X rem Y;
+mod(0,_) -> 0.
