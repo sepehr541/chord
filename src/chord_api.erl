@@ -40,13 +40,14 @@ create(NodeName) ->
     Name = {local, NodeName},
     gen_server:start_link(Name, ?MODULE, [NodeName], []).
 
--spec join(NodeName, BootstrapNode) -> any() when
-    NodeName :: atom(),
-    BootstrapNode :: atom().
 
 %
 % create a new node and join an exisiting ring
 %
+-spec join(NodeName, BootstrapNode) -> any() when
+    NodeName :: atom(),
+    BootstrapNode :: atom().
+
 join(NodeName, BootstrapNode) ->
     % check if bootstrapNode is registered
     case whereis(BootstrapNode) of
@@ -108,7 +109,7 @@ findPredecessorCommon(State, Node, Successor, Id) ->
 % NOTE: uses RPC to BootstrapNode
 -spec initFingerTable(State, BootstrapNode) -> UpdatedState when
     State :: state(),
-    BootstrapNode :: atom(),
+    BootstrapNode :: chord_node(),
     UpdatedState :: state().
 
 initFingerTable(#state{this = Node} = State, BootstrapNode) ->
@@ -135,10 +136,11 @@ initFingerTable(#state{this = Node} = State, BootstrapNode) ->
 -spec notify(State) -> any() when State :: state().
 
 notify(#state{this = Node} = State) ->
-    N = Node#chord_node.id,
+    N = binary_to_integer(Node#chord_node.id),
     lists:foreach(
         fun(I) ->
-            P = findPredecessor(State, mod(N - pow(2, I - 1), pow(2, ?M))),
+            Id = integer_to_binary(mod(N - pow(2, I - 1), pow(2, ?M))),
+            P = findPredecessor(State, Id),
             rpc_updateFingerTable(P, Node, I)
         end,
         lists:seq(1, ?M)
@@ -153,23 +155,22 @@ notify(#state{this = Node} = State) ->
     Finger :: chord_node().
 
 closestPreceedingFinger(State, Id) ->
-    closestPreceedingFinger(State, Id, ?M).
+    closestPreceedingFingerHelper(State, Id, ?M).
 
--spec closestPreceedingFinger(State, Id, Index) -> Finger when
+-spec closestPreceedingFingerHelper(State, Id, Index) -> Finger when
     State :: state(),
     Id :: id(),
     Index :: ftIndex(),
     Finger :: chord_node().
 
-closestPreceedingFinger(#state{this = Node}, _, 0) ->
-    Node;
-closestPreceedingFinger(#state{this = Node, ft = Ft} = State, Id, Index) when Index > 0 ->
+closestPreceedingFingerHelper(#state{this = Node, ft = Ft} = State, Id, Index) when Index > 0 ->
     FingerNode = ft_node(Index, Ft),
     FingerNodeId = FingerNode#chord_node.id,
     Interval = #interval_Open_Open{left = Node#chord_node.id, right = Id},
     case isInInterval(FingerNodeId, Interval) of
         true -> FingerNode;
-        false -> closestPreceedingFinger(State, Id, Index - 1)
+        false when Index =:= 1 -> Node;
+        _ -> closestPreceedingFingerHelper(State, Id, Index - 1)
     end.
 
 %
@@ -286,6 +287,12 @@ putKV(#state{this = ThisNode} = State, Key, Value) ->
 %     notify(Node, array:get(0, UpdatedState#state.ft)),
 %     UpdatedState.
 
+%
+% Helpers
+%
+
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%% RPC Calls %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -306,7 +313,7 @@ rpc_closestPreceedingFinger(Remote, Id) ->
 % ask remote to find the successor of Id
 %
 -spec rpc_findSuccessor(Remote, Id) -> Successor when
-    Remote :: atom(),
+    Remote :: chord_node(),
     Id :: id(),
     Successor :: chord_node().
 
@@ -343,5 +350,5 @@ rpc_acceptKVEntires(Remote, Entries) ->
     Remote :: chord_node(),
     Request :: any().
 
-rpc_call(#chord_node{pid = Pid}, Request) ->
-    gen_server:call(Pid, Request).
+rpc_call(#chord_node{ref = Ref}, Request) ->
+    gen_server:call(Ref, Request).

@@ -20,13 +20,4 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     ok.
 
--spec pidToNode(Pid) -> Node when
-    Pid :: pid(),
-    Node :: chord_node().
-
-pidToNode(Pid) ->
-    #chord_node{id = hash(Pid), pid = Pid}.
-
-
-
 

@@ -25,17 +25,27 @@
     code_change/3
 ]).
 
+-spec nameToNode(Name) -> Node when
+    Name :: atom(),
+    Node :: chord_node().
+
+nameToNode(Name) ->
+    #chord_node{id = hash(Name), ref = Name}.
+
+
+
 %
 % gen_server callbacks
 %
 -spec init(Args) -> Result when
-    Args :: list(atom()),
+    Args :: [atom()],
     Result :: any().
 
 init([NodeName]) ->
     State = initState(NodeName),
     {ok, State};
-init([NodeName, BootstrapNode]) ->
+init([NodeName, BootstrapNodeName]) ->
+    BootstrapNode = nameToNode(BootstrapNodeName),
     State = initState(NodeName),
     UpdatedState = initFingerTable(State, BootstrapNode),
     notify(UpdatedState),
@@ -60,11 +70,13 @@ handle_call(#acceptKVEntires{entries = Entries}, _, State) ->
     UpdatedState = acceptKVEntires(State, Entries),
     {reply, ok, UpdatedState}.
 
-handle_cast(_, _) ->
-    perror(?FUNCTION_NAME).
+handle_cast(_, State) ->
+    perror(?FUNCTION_NAME),
+    {noreply, State}.
 
-handle_info(_, _) ->
-    perror(?FUNCTION_NAME).
+handle_info(_, State) ->
+    perror(?FUNCTION_NAME),
+    {noreply, State}.
 
 %
 % Terminate
@@ -75,8 +87,9 @@ terminate(_, _) ->
 %
 % Code Change
 %
-code_change(_, _, _) ->
-    perror(?FUNCTION_NAME).
+code_change(_, State, _) ->
+    perror(?FUNCTION_NAME),
+    {ok, State}.
 
 %
 % helpers
@@ -85,9 +98,9 @@ code_change(_, _, _) ->
     NodeName :: atom().
 
 initState(NodeName) ->
-    This = #chord_node{id = hash(NodeName), pid = NodeName},
+    This = #chord_node{id = hash(NodeName), ref = NodeName},
     Ft = ft_new(?M, This),
-    #state{this = This, pred = This, ft = Ft}.
+    #state{this = This, pred = This, ft = Ft, next = 1}.
 
 perror(Op) ->
     io:format("Operation not allowed: ~p~n", [Op]).

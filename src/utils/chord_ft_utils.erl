@@ -17,7 +17,7 @@ ft_new(Size, DefaultValue) ->
     EntryStart :: id().
 
 ft_start(#state{this = #chord_node{id = N}}, K) when 1 =< K andalso K =< ?M ->
-    (N + pow(2, K - 1)) rem pow(2, ?M).
+    integer_to_binary((binary_to_integer(N) + pow(2, K - 1)) rem pow(2, ?M)).
 
 -spec ft_interval(State, K) -> interval_Closed_Open() when
     State :: state(),

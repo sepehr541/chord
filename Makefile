@@ -1,4 +1,4 @@
-.PHONY: build test shell
+.PHONY: build test shell clean
 
 default: build
 
@@ -12,4 +12,7 @@ shell:
 	rebar3 shell
 
 typecheck:
-	dialyzer --src src/*.erl test/*.erl
+	dialyzer --src src/*.erl src/utils/*.erl test/*.erl
+
+clean:
+	rm -rf *.xml _build 

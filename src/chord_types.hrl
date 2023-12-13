@@ -7,8 +7,9 @@
 % Node Structure
 %
 -type id() :: binary().
+-type ref() :: pid() | atom().
 
--record(chord_node, {id :: id(), pid :: pid()}).
+-record(chord_node, {id :: id(), ref :: ref()}).
 -type chord_node() :: #chord_node{}.
 
 -type fingertable() :: array:array(chord_node()).
@@ -16,9 +17,9 @@
 
 -record(state, {
     this :: chord_node(),
-    pred :: (chord_node() | nil),
+    pred  = nil :: (chord_node() | nil),
     ft :: fingertable(),
-    next :: pos_integer(),
+    next = 1 :: pos_integer(),
     kvstore = #{} :: kvstore()
 }).
 -type state() :: #state{}.
