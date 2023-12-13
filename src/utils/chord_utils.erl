@@ -2,7 +2,7 @@
 
 -include("../chord_types.hrl").
 
--export([hash/1, pow/2, mod/2, toInt/1, toBin/1]).
+-export([hash/1, pow/2, mod/2, toInt/1, toBin/1, nameToNode/1]).
 
 -spec hash(Term) -> Digest when
     Term :: term(),
@@ -48,3 +48,15 @@ toInt(Bin) ->
 
 toBin(Int) ->
     binary:encode_unsigned(Int).
+
+
+
+%
+% create chord_node from Name atom
+%
+-spec nameToNode(Name) -> Node when
+    Name :: atom(),
+    Node :: chord_node().
+
+nameToNode(Name) ->
+    #chord_node{id = hash(Name), ref = Name}.

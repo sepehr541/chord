@@ -2,7 +2,7 @@
 -include("chord_types.hrl").
 -import(chord_circular_interval, [isInInterval/2]).
 -import(chord_ft_utils, [ft_node/2, successor/1, ft_set_finger/3, ft_start/2]).
--import(chord_utils, [hash/1, pow/2, mod/2, toInt/1]).
+-import(chord_utils, [hash/1, pow/2, mod/2, toInt/1, toBin/1]).
 
 -define(GEN_SERVER_MODULE, chord_gen_server).
 
@@ -35,7 +35,9 @@
 -export([
     rpc_findSuccessor/2,
     rpc_closestPreceedingFinger/2,
-    rpc_acceptKVEntires/2
+    rpc_acceptKVEntires/2,
+    rpc_putEntry/3,
+    rpc_getEntry/2
 ]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -73,9 +75,14 @@ join(NodeName, BootstrapNode) ->
     Id :: id(),
     Successor :: chord_node().
 
-findSuccessor(State, Id) ->
+findSuccessor(#state{this = ThisNode} = State, Id) ->
     Nprime = findPredecessor(State, Id),
-    rpc_findSuccessor(Nprime, Id).
+    % io:format("ThisNode: ~p, Nprime: ~p, Equal: ~p~n", [ThisNode, Nprime, Nprime =:= ThisNode]),
+    case Nprime =:= ThisNode of
+        true -> successor(State);
+        false -> rpc_successor(Nprime)
+    end.
+    
 
 %
 % find the predecessor of Id
@@ -106,11 +113,20 @@ findPredecessor(State, Remote, Id) ->
     Successor = rpc_successor(Remote),
     findPredecessorCommon(State, Remote, Successor, Id).
 
-findPredecessorCommon(State, Node, Successor, Id) ->
+findPredecessorCommon(#state{this = ThisNode} = State, Node, Successor, Id) ->
     Interval = #interval_Open_Closed{left = Node#chord_node.id, right = Successor#chord_node.id},
     case isInInterval(Id, Interval) of
         true -> Node;
-        false -> findPredecessor(State, Successor, Id)
+        false -> 
+            Nprime = 
+                case Node =:= ThisNode of
+                    true -> closestPreceedingFinger(State, Id);
+                    false -> rpc_closestPreceedingFinger(Node, Id)
+                end,
+            case Nprime =:= Node of
+                true -> Node; % base case, should not loop forever
+                false -> findPredecessor(State, Nprime, Id)
+            end
     end.
 
 %
@@ -149,9 +165,13 @@ notify(#state{this = Node} = State) ->
     N = toInt(Node#chord_node.id),
     lists:foreach(
         fun(I) ->
-            Id = integer_to_binary(mod(N - pow(2, I - 1), pow(2, ?M))),
+            % io:format("Index: ~p~n", [I]),
+            Id = toBin(mod(N - pow(2, I - 1), pow(2, ?M))),
             P = findPredecessor(State, Id),
-            rpc_updateFingerTable(P, Node, I)
+            case P =:= Node of
+                true -> updateFingerTable(State, Node, I);
+                false -> rpc_updateFingerTable(P, Node, I)
+            end
         end,
         lists:seq(1, ?M)
     ).
@@ -173,8 +193,8 @@ closestPreceedingFinger(State, Id) ->
     Index :: ftIndex(),
     Finger :: chord_node().
 
-closestPreceedingFingerHelper(#state{this = Node, ft = Ft} = State, Id, Index) when Index > 0 ->
-    FingerNode = ft_node(Index, Ft),
+closestPreceedingFingerHelper(#state{this = Node} = State, Id, Index) when Index > 0 ->
+    FingerNode = ft_node(State, Index),
     FingerNodeId = FingerNode#chord_node.id,
     Interval = #interval_Open_Open{left = Node#chord_node.id, right = Id},
     case isInInterval(FingerNodeId, Interval) of
@@ -200,7 +220,10 @@ updateFingerTable(#state{this = ThisNode} = State, S, I) ->
         true -> 
             UpdatedState = ft_set_finger(State, I, S),
             P = UpdatedState#state.pred,
-            rpc_updateFingerTable(P, S, I),
+            case P =:= ThisNode of
+                true -> noop;
+                false -> rpc_updateFingerTable(P, S, I)
+            end,
             UpdatedState;
         false -> State % No-Op
     end.
