@@ -2,7 +2,9 @@
 -include("chord_types.hrl").
 -import(chord_circular_interval, [isInInterval/2]).
 -import(chord_ft_utils, [ft_node/2, successor/1, ft_set_finger/3, ft_start/2]).
--import(chord_utils, [hash/1, pow/2, mod/2]).
+-import(chord_utils, [hash/1, pow/2, mod/2, toInt/1]).
+
+-define(GEN_SERVER_MODULE, chord_gen_server).
 
 %
 % Local
@@ -17,6 +19,14 @@
     updateFingerTable/3,
     moveKeys/2,
     acceptKVEntires/2
+]).
+
+%
+% KVStore
+%
+-export([
+    putEntry/3,
+    getEntry/2    
 ]).
 
 %
@@ -38,7 +48,7 @@
 -spec create(NodeName :: atom()) -> any().
 create(NodeName) ->
     Name = {local, NodeName},
-    gen_server:start_link(Name, ?MODULE, [NodeName], []).
+    gen_server:start_link(Name, ?GEN_SERVER_MODULE, [NodeName], []).
 
 
 %
@@ -52,7 +62,7 @@ join(NodeName, BootstrapNode) ->
     % check if bootstrapNode is registered
     case whereis(BootstrapNode) of
         undefined -> error("Bootstrap node does not exist");
-        _ -> gen_server:start_link({local, NodeName}, ?MODULE, [NodeName, BootstrapNode], [])
+        _ -> gen_server:start_link({local, NodeName}, ?GEN_SERVER_MODULE, [NodeName, BootstrapNode], [])
     end.
 
 %
@@ -136,7 +146,7 @@ initFingerTable(#state{this = Node} = State, BootstrapNode) ->
 -spec notify(State) -> any() when State :: state().
 
 notify(#state{this = Node} = State) ->
-    N = binary_to_integer(Node#chord_node.id),
+    N = toInt(Node#chord_node.id),
     lists:foreach(
         fun(I) ->
             Id = integer_to_binary(mod(N - pow(2, I - 1), pow(2, ?M))),
@@ -232,8 +242,10 @@ acceptKVEntires(#state{kvstore = KVStore} = State, Entries) ->
 %
 % local: Shutdown Node
 %
--spec shutdownNode(Node :: state()) -> ok | error.
-shutdownNode(Node) -> error.
+
+% TODO
+% -spec shutdownNode(Node :: state()) -> ok | error.
+% shutdownNode(Node) -> error.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -244,21 +256,34 @@ shutdownNode(Node) -> error.
 %
 % Local: put Key-Value in Chord Ring
 %
--spec putKV(State, Key, Value) -> UpdatedState when
+-spec putEntry(State, Key, Value) -> UpdatedState when
     State::state(),
     Key::key(),
     Value::value(),
     UpdatedState::state().
 
-putKV(#state{this = ThisNode} = State, Key, Value) ->
+putEntry(#state{this = ThisNode, kvstore = KVStore} = State, Key, Value) ->
     Successor = findSuccessor(State, hash(Key)),
     case Successor =:= ThisNode of
-        true -> State#state{};
+        true -> 
+            State#state{ kvstore = maps:put(Key, Value, KVStore)};
         false -> 
-            
+            rpc_putEntry(Successor, Key, Value),
             State
     end.
 
+
+-spec getEntry(State, Key) -> Entry when
+    State::state(),
+    Key::key(),
+    Entry::kvEntry() | undefined.
+
+getEntry(#state{this = ThisNode, kvstore = KVStore} = State, Key) ->
+    Successor = findSuccessor(State, hash(Key)),
+    case Successor =:= ThisNode of
+        true -> maps:get(Key, KVStore, undefined);
+        false -> rpc_getEntry(Successor, Key)
+    end.
 
 %
 % TODO: Concurrent Join Support
@@ -286,11 +311,6 @@ putKV(#state{this = ThisNode} = State, Key, Value) ->
 %         end,
 %     notify(Node, array:get(0, UpdatedState#state.ft)),
 %     UpdatedState.
-
-%
-% Helpers
-%
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -342,6 +362,30 @@ rpc_updateFingerTable(Remote, Node, I) ->
 
 rpc_acceptKVEntires(Remote, Entries) ->
     rpc_call(Remote, #acceptKVEntires{entries = Entries}).
+
+%
+% Remote: tell node to store Key-Value
+%
+-spec rpc_putEntry(Remote, Key, Value) -> ok when
+    Remote::chord_node(),
+    Key::key(),
+    Value::value().
+
+rpc_putEntry(Remote, Key, Value) ->
+    rpc_call(Remote, #putEntry{entry = #kvEntry{ key = Key, value = Value}}).
+
+
+%
+% Remote: tell node to get Key-Value
+%
+-spec rpc_getEntry(Remote, Key) -> Entry when
+    Remote::chord_node(),
+    Key::key(),
+    Entry::kvEntry() | undefined.
+
+rpc_getEntry(Remote, Key) ->
+    rpc_call(Remote, #getEntry{key = Key}).
+
 
 %
 % Helpers

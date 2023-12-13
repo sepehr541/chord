@@ -4,7 +4,7 @@
 
 %% Test data and setup
 -define(TEST_ID_BIN, <<1>>).
--define(TEST_ID, binary_to_integer(?TEST_ID_BIN)).
+-define(TEST_ID, chord_utils:toInt(?TEST_ID_BIN)).
 -define(TEST_NODE, #chord_node{id = ?TEST_ID_BIN}).
 -define(TEST_STATE, #state{this = ?TEST_NODE, ft = chord_ft_utils:ft_new(?M, undefined)}).
 
@@ -19,7 +19,7 @@ ft_new_test() ->
 ft_start_test() ->
     StartIndex = 5,
     ExpectedStart = (?TEST_ID + chord_utils:pow(2, StartIndex - 1)) rem chord_utils:pow(2, ?M),
-    ?assertEqual(integer_to_binary(ExpectedStart), chord_ft_utils:ft_start(?TEST_STATE, StartIndex)).
+    ?assertEqual(chord_utils:toBin(ExpectedStart), chord_ft_utils:ft_start(?TEST_STATE, StartIndex)).
 
 %% ft_interval/2 tests
 ft_interval_test() ->

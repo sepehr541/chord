@@ -2,7 +2,7 @@
 
 -include("../chord_types.hrl").
 
--export([hash/1, pow/2, mod/2]).
+-export([hash/1, pow/2, mod/2, toInt/1, toBin/1]).
 
 -spec hash(Term) -> Digest when
     Term :: term(),
@@ -30,3 +30,21 @@ pow(Base, Exp, Acc) when Exp > 0 -> pow(Base, Exp - 1, Acc * Base).
 mod(X,Y) when X > 0 -> X rem Y;
 mod(X,Y) when X < 0 -> Y + X rem Y;
 mod(0,_) -> 0.
+
+
+%
+% Helpers for binary <-> integer
+%
+-spec toInt(Bin) -> Int when
+    Bin :: binary(),
+    Int :: non_neg_integer().
+
+toInt(Bin) ->
+    binary:decode_unsigned(Bin).
+
+-spec toBin(Int) -> Bin when
+    Int :: non_neg_integer(),
+    Bin :: binary().
+
+toBin(Int) ->
+    binary:encode_unsigned(Int).

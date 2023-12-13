@@ -76,12 +76,6 @@
 -record(putEntry, {entry :: kvEntry()}).
 -type putEntry() :: #putEntry{}.
 
--record(foundEntry, {entry :: kvEntry()}).
--type foundEntry() :: #foundEntry{}.
-
--record(entryNotFound, {}).
--type entryNotFound() :: #entryNotFound{}.
-
 %
 % Timer
 %

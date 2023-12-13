@@ -1,6 +1,6 @@
 -module(chord_ft_utils).
 -include("../chord_types.hrl").
--import(chord_utils, [pow/2]).
+-import(chord_utils, [pow/2, toInt/1, toBin/1]).
 
 -export([ft_new/2, ft_start/2, ft_interval/2, ft_node/2, successor/1, ft_set_finger/3]).
 
@@ -17,7 +17,7 @@ ft_new(Size, DefaultValue) ->
     EntryStart :: id().
 
 ft_start(#state{this = #chord_node{id = N}}, K) when 1 =< K andalso K =< ?M ->
-    integer_to_binary((binary_to_integer(N) + pow(2, K - 1)) rem pow(2, ?M)).
+    toBin((toInt(N) + pow(2, K - 1)) rem pow(2, ?M)).
 
 -spec ft_interval(State, K) -> interval_Closed_Open() when
     State :: state(),
