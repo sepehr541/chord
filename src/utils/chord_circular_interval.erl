@@ -7,24 +7,29 @@
     Id :: id(),
     Interval :: interval().
 
-% (Lower, Upper)
-isInInterval(Id, #interval_Open_Open{left = Lower, right = Upper}) when (Lower < Upper) andalso (Lower < Id) andalso (Id < Upper) -> true;
-isInInterval(Id, #interval_Open_Open{left = Lower, right = Upper}) when (Lower > Upper) andalso ((Id < Upper) orelse (Id > Lower)) -> true;
-
-% (Lower, Upper]
-isInInterval(Id, #interval_Open_Closed{left = Lower, right = Upper}) when (Lower < Upper) andalso (Lower < Id) andalso (Id =< Upper) -> true;
-isInInterval(Id, #interval_Open_Closed{left = Lower, right = Upper}) when (Lower > Upper) andalso ((Id =< Upper) orelse (Id > Lower)) -> true;
+-define(compare(Op1, Op2, Op3, Op4),
+    ((Lower < Upper) andalso (Lower Op1 Id) andalso (Id Op2 Upper)) orelse
+    ((Lower > Upper) andalso ((Id Op3 Upper) orelse (Id Op4 Lower)))
+).
 
 
-% [Lower, Upper]
-isInInterval(Id, #interval_Closed_Closed{left = Lower, right = Upper}) when (Lower < Upper) andalso (Lower =< Id) andalso (Id =< Upper) -> true;
-isInInterval(Id, #interval_Closed_Closed{left = Lower, right = Upper}) when (Lower > Upper) andalso ((Id =< Upper) orelse (Id >= Lower)) -> true;
-isInInterval(Id, #interval_Closed_Closed{left = Id, right = Id}) -> true;
 
 % [Lower, Upper)
-isInInterval(Id, #interval_Closed_Open{left = Lower, right = Upper}) when (Lower < Upper) andalso (Lower =< Id) andalso (Id < Upper) -> true;
-isInInterval(Id, #interval_Closed_Open{left = Lower, right = Upper}) when (Lower > Upper) andalso ((Id < Upper) orelse (Id >= Lower)) -> true;
+isInInterval(Id, #interval_Closed_Open{left = Lower, right = Upper}) ->
+    ?compare(=<, <, <, >=);
 
+% (Lower, Upper)
+isInInterval(Id, #interval_Open_Open{left = Lower, right = Upper}) ->
+    ?compare(<, <, <, >);
+
+% (Lower, Upper]
+isInInterval(Id, #interval_Open_Closed{left = Lower, right = Upper}) ->
+    ?compare(<, =<, =<, >);
+
+% [Lower, Upper]
+isInInterval(Id, #interval_Closed_Closed{left = Id, right = Id}) -> true;
+isInInterval(Id, #interval_Closed_Closed{left = Lower, right = Upper}) ->
+    ?compare(=<, =<, =<, >=);
 
 % else
 isInInterval(_, _) -> false.

@@ -2,19 +2,27 @@
 -behaviour(gen_server).
 
 -include("chord_types.hrl").
+-include_lib("stdlib/include/assert.hrl").
+
 -import(chord_utils, [hash/1, nameToNode/1]).
--import(chord_ft_utils, [ft_new/2, successor/1]).
+-import(chord_ft_utils, [ft_new/2, successor/1, ft_node/2]).
 -import(chord_circular_interval, [isInInterval/2]).
+-import(script_utils, [printFT/1]).
 
 -import(chord_api, [
     notify/1,
     initFingerTable/2,
     closestPreceedingFinger/2,
     findSuccessor/2,
+    findPredecessor/2,
     updateFingerTable/3,
     acceptKVEntires/2,
     putEntry/3,
-    getEntry/2
+    getEntry/2,
+    moveKeys/2,
+    updatePredecessor/2,
+    rpc_moveKeys/2,
+    rpc_updatePredecessor/2
 ]).
 
 %% gen_server callbacks
@@ -43,15 +51,27 @@ init([NodeName, BootstrapNodeName]) ->
     BootstrapNode = nameToNode(BootstrapNodeName),
     
     State = initState(NodeName),
-    
-    % io:format("Node ~p initFingerTable Called~n", [NodeName]),
+    ThisNode = State#state.this,
+    % printFT(State),
+
+
     UpdatedState = initFingerTable(State, BootstrapNode),
-    
-    % io:format("Node ~p notify Called~n", [NodeName]),
+    % io:format("Node ~p initFingerTable Done~n", [NodeName]),
+
+    % io:format("========================== After initFingerTable ======================"),
+    % printFT(UpdatedState),
+
+    Successor = successor(UpdatedState),
+    ?assert(Successor =/= ThisNode),
+
     notify(UpdatedState),
-    
-    % io:format("Node ~p init DONE~n", [NodeName]),
-    {ok, UpdatedState}.
+    % io:format("Node ~p notify Done~n", [NodeName]),
+
+    SuccessorOldPred = rpc_updatePredecessor(Successor, ThisNode),
+    {_, UpdatedState2} = updatePredecessor(UpdatedState, SuccessorOldPred),
+    KVEntries = rpc_moveKeys(Successor, ThisNode),
+    UpdatedState3 = acceptKVEntires(UpdatedState2, KVEntries),
+    {ok, UpdatedState3}.
 
 %
 % handlers
@@ -67,27 +87,33 @@ handle_call(Request, From, State) ->
         #findSuccessor{targetId = Id} ->
             Successor = findSuccessor(State, Id),
             {reply, Successor, State};
-        #updateFingerTable{node = Node, index = I} ->
-            UpdatedState = updateFingerTable(State, Node, I),
-            {reply, ok, UpdatedState};
-        #acceptKVEntires{entries = Entries} ->
-            UpdatedState = acceptKVEntires(State, Entries),
-            {reply, ok, UpdatedState};
+        % #updateFingerTable{node = Node, index = I} ->
+        %     UpdatedState = updateFingerTable(State, Node, I),
+        %     {reply, ok, UpdatedState};
+        #moveKeys{node = Remote} ->
+            {EntriesToMove, UpdatedState} = moveKeys(State, Remote),
+            {reply, EntriesToMove, UpdatedState};
         #putEntry{entry = #kvEntry{key = Key, value = Value}} ->
             UpdatedState = putEntry(State, Key, Value),
             {reply, ok, UpdatedState};
         #getEntry{key = Key} ->
             Value = getEntry(State, Key),
-            {reply, Value, State}
+            {reply, Value, State};
+        #updatePredecessor{node = Node} ->
+            {OldPred, UpdatedState} = updatePredecessor(State, Node),
+            {reply, OldPred, UpdatedState}
     end,
     % {reply, _, StateAfter} = Reply,
     % io:format("State-After: ~p~n", [StateAfter]),
     %timer:sleep(1000),
     Reply.
 
-handle_cast(_, State) ->
-    perror(?FUNCTION_NAME),
-    {noreply, State}.
+handle_cast(Request, State) ->
+    case Request of
+        #updateFingerTable{node = Node, index = I} ->
+            UpdatedState = updateFingerTable(State, Node, I),
+            {noreply, UpdatedState}
+    end.
 
 handle_info(_, State) ->
     perror(?FUNCTION_NAME),

@@ -9,7 +9,7 @@
     erl
    ]},
   {env,[]},
-  {modules, [chord_app, chord_fingertable, chord_messaging, chord_request_handlers, chord_response_handlers, chord_sup]},
+  {modules, []},
 
   {licenses, ["Apache-2.0"]},
   {links, []}

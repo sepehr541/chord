@@ -2,14 +2,15 @@
 
 -include("../chord_types.hrl").
 
--export([hash/1, pow/2, mod/2, toInt/1, toBin/1, nameToNode/1]).
+-export([hash/1, pow/2, mod/2, toInt/1, toBin/1, nameToNode/1, extract_state/1, distance/2]).
+-export([printNode/1]).
 
 -spec hash(Term) -> Digest when
     Term :: term(),
     Digest :: binary().
 
 hash(Term) ->
-    crypto:hash(sha, term_to_binary(Term)).
+    toBin(toInt(crypto:hash(sha, term_to_binary(Term))) rem pow(2, ?M)).
 
 
 -spec pow(Base, Exp) -> Result when 
@@ -60,3 +61,33 @@ toBin(Int) ->
 
 nameToNode(Name) ->
     #chord_node{id = hash(Name), ref = Name}.
+
+
+
+%
+% Get the state of the gen_server Node with given name
+%
+extract_state(NodeName) ->
+    sys:get_state(whereis(NodeName)).
+
+
+%
+% Distance between IDs
+%
+-spec distance(A, B) -> Distance when
+    A::id(),
+    B::id(),
+    Distance::non_neg_integer().
+
+
+distance(A, B) ->
+    RingSize =  pow(2, ?M),
+    (toInt(B) - toInt(A) + RingSize) rem RingSize.
+
+
+%
+% print chord_node()
+%
+
+printNode(#chord_node{id = Id, ref = Ref}) ->
+    "(" ++  atom_to_list(Ref) ++ ", " ++ integer_to_list(toInt(Id)) ++ ")".

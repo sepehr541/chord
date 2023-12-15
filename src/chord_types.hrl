@@ -17,7 +17,7 @@
 
 -record(state, {
     this :: chord_node(),
-    pred  = nil :: (chord_node() | nil),
+    pred = nil :: (chord_node() | nil),
     ft :: fingertable(),
     next = 1 :: pos_integer(),
     kvstore = #{} :: kvstore()
@@ -28,37 +28,13 @@
 % RPC Requests
 %
 -record(findSuccessor, {targetId :: id()}).
--type findSuccessor() :: #findSuccessor{}.
-
--record(foundSuccessor, {targetId :: id(), successor :: chord_node()}).
--type foundSuccessor() :: #foundSuccessor{}.
-
--record(askNode, {targetId :: id(), nodeToAsk :: chord_node()}).
--type askNode() :: #askNode{}.
-
--record(getPredecessor, {}).
--type getPredecessor() :: #getPredecessor{}.
--record(foundPredecessor, {predecessor :: chord_node()}).
--type foundPredecessor() :: #foundPredecessor{}.
-
 -record(notify, {}).
--type notify() :: #notify{}.
-
--record(heartbeat, {}).
--type heartbeat() :: #heartbeat{}.
-
--record(heartbeatAck, {}).
--type heartbeatAck() :: #heartbeatAck{}.
-
 -record(closestPreceedingFinger, {targetId :: id()}).
--type closestPreceedingFinger() :: #closestPreceedingFinger{}.
-
 -record(successor, {}).
-% -type successor() :: #successor{}.
-
 -record(updateFingerTable, {node :: chord_node(), index :: ftIndex()}).
+-record(moveKeys, {node :: chord_node()}).
+-record(updatePredecessor, {node :: chord_node()}).
 
--record(acceptKVEntires, {entries:: kvstore()}).
 
 %
 % Key-Value Store
@@ -83,7 +59,6 @@
 % use send_after/2
 -type timer() :: ok.
 
-
 %
 % Interval
 %
@@ -105,4 +80,3 @@
     | interval_Open_Closed()
     | interval_Closed_Open()
     | interval_Closed_Closed().
-
