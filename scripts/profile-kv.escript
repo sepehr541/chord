@@ -8,7 +8,7 @@
 -include("../src/chord_types.hrl").
 -import(script_utils, [create_ring/1, generate_keys/2, perform_puts/2]).
 
-main([NumNodesStr, NumKeysStr, KeySizeStr]) ->
+main([NumNodesStr, NumKeysStr, KeySizeStr, Output]) ->
     NumNodes = list_to_integer(NumNodesStr),
     NumKeys = list_to_integer(NumKeysStr),
     KeySize = list_to_integer(KeySizeStr),
@@ -25,12 +25,12 @@ main([NumNodesStr, NumKeysStr, KeySizeStr]) ->
     perform_puts(Nodes, Keys),
 
     eprof:stop_profiling(),
-    eprof:log("profile2.txt"),
+    eprof:log(Output),
     eprof:analyze(),
 
     io:format("Profile results written to profile.txt\n");
 main(_) ->
-    io:format("Usage: ./script NumNodes NumKeys\n").
+    io:format("Usage: ./script NumNodes NumKeys KeySize Output\n").
 
 
     

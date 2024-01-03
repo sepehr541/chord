@@ -9,8 +9,16 @@
     Term :: term(),
     Digest :: binary().
 
+% iterate_binary(Binary) -> 
+%     lists:foreach(fun(I) -> binary:at(Binary, I) end,lists:seq(0, byte_size(Binary) - 1)).
+
+pure_hash(T) ->
+    crypto:hash(sha, T).
+
 hash(Term) ->
-    toBin(toInt(crypto:hash(sha, term_to_binary(Term))) rem pow(2, ?M)).
+    T = term_to_binary(Term),
+    % iterate_binary(T),
+    pure_hash(T).
 
 
 -spec pow(Base, Exp) -> Result when 
