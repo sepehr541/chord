@@ -8,6 +8,8 @@ An Erlang implementation of Chord peer-to-peer protocol [link to paper](https://
 
 This project is intended for benchmarking Chord and analyzing the overheads of hashing and communication.
 
+[Project Report](report/project_report.pdf)
+
 Build
 -----
 
@@ -37,4 +39,4 @@ To profile Key-Value insertions and retievals run the command below to gather th
 Then run the analysis script
 
     $ python3 analyze-profiling.py <PathToProfileData>
-	
+----
